@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Tnak Trouble (by Komputer Kids Klub)</title>
+
+    <script language="JavaScript">
+        var space = " ";
+        var speed = "100";
+        var pos = 0;
+        var msg = "Tnak Trouble (by Komputer Kids Klub)";
+
+        function Scroll() {
+            document.title = msg.substring(pos, msg.length) + space + msg.substring(0, pos);
+            pos++;
+            if (pos > msg.length) pos = 0; d
+            window.setTimeout("Scroll()", speed);
+        }
+        Scroll();
+    </script>
+
+    <meta name="viewport" content="user-scalable=no,  initial-scale=1,  maximum-scale=1,  width=device-width" />
+    <script src="phaser.min.js"></script>
+</head>
+
+<body onload="">
+
+
+    <div id="canvasholder">
+
+        <script src="Tnak.js"></script>
+
+    </div>
+
+</body>
+
+</html>
