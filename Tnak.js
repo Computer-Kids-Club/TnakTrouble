@@ -10,7 +10,131 @@ function randint(a, b) {
   return game.rnd.integerInRange(a, b);
 }
 
-var game = new Phaser.Game(800, 800, Phaser.AUTO, "canvasholder", {
+window.addEventListener("keydown", function(e) {
+  // space and arrow keys
+  if([32, 37, 38, 39, 40].indexOf(e.keyCode) > -1) {
+      e.preventDefault();
+  }
+}, false);
+
+var receivedMessage;
+var hasMaze = false;
+messages = document.createElement('ul');
+document.body.appendChild(messages);
+var connectedToWS = false;
+var clientId = 0;
+
+function doConnect()
+{
+  websocket = new WebSocket("ws://192.168.31.206:7755/");
+  websocket.onopen = function(evt) { onOpen(evt) };
+  websocket.onclose = function(evt) { onClose(evt) };
+  websocket.onmessage = function(evt) { onMessage(evt) };
+  websocket.onerror = function(evt) { onError(evt) };
+}
+function onOpen(evt)
+{
+  writeToScreen("connected\n");
+  connectedToWS = true;
+}
+function onClose(evt)
+{
+  writeToScreen("disconnected\n");
+  connectedToWS = false;
+}
+function onMessage(evt) {
+  //writeToScreen(evt.data);
+  receivedMessage = JSON.parse(evt.data);
+  //writeToScreen(receivedMessage.mapVertical[3]);
+  if(receivedMessage.dataType==1) {
+    clientId = receivedMessage.clientId;
+    player.body.x = receivedMessage.positionIndex[0]*100+55;
+    player.body.y = receivedMessage.positionIndex[1]*100+55;
+    for (var i = 0; i < receivedMessage.mapHorizontal.length; i++) {
+      var wallall = new Wall(receivedMessage.mapHorizontal[i][0]*100,receivedMessage.mapHorizontal[i][1]*100,10,110);
+    }
+    for (var i = 0; i < receivedMessage.mapVertical.length; i++) {
+      var wallall = new Wall(receivedMessage.mapVertical[i][0]*100,receivedMessage.mapVertical[i][1]*100,100,10);
+    }
+  } else if(receivedMessage.dataType==0) {
+    // match other players
+    for (var i = 0; i < receivedMessage.playersX.length; i++) {
+      if(receivedMessage.clientId[i]==clientId) {
+        receivedMessage.clientId.splice(i,1);
+        receivedMessage.playersX.splice(i,1);
+        receivedMessage.playersY.splice(i,1);
+        receivedMessage.playersRot.splice(i,1);
+        receivedMessage.playersBullets.splice(i,1);
+        receivedMessage.playersColour.splice(i,1);
+        break;
+      }
+    }
+    if(otherPlayers.length > receivedMessage.playersX.length) {
+      for (var i = otherPlayers.length; i >= receivedMessage.playersX.length; i--) {
+        otherPlayers[i].playerSprite.destroy();
+      }
+      otherPlayers.splice(receivedMessage.playersX.length, otherPlayers.length-receivedMessage.playersX.length);
+    }else if(otherPlayers.length < receivedMessage.playersX.length) {
+      for (var i = 0; i < receivedMessage.playersX.length-otherPlayers.length; i++) {
+        var otherPlayer = new OtherPlayer(0,0);
+        otherPlayers.push(otherPlayer);
+      }
+    }
+    for (var i = 0; i < otherPlayers.length; i++) {
+      otherPlayers[i].updatePos(receivedMessage.playersX[i],receivedMessage.playersY[i]);
+      otherPlayers[i].playerSprite.body.angle = receivedMessage.playersRot[i];
+    }
+    // match other bullets
+    var allOtherBullets = [];
+    for (var i = 0; i < receivedMessage.playersBullets.length ; i++) {
+      if(receivedMessage.clientId[i]==clientId) {
+        continue;
+      }
+      allOtherBullets = allOtherBullets.concat(receivedMessage.playersBullets[i]);
+    }
+    if(otherbullets.length > allOtherBullets.length) {
+      for (var i = otherbullets.length; i >= allOtherBullets.length ; i--) {
+        otherbullets[i].sprite.destroy();
+      }
+      otherbullets.splice(allOtherBullets.length, otherbullets.length-allOtherBullets.length);
+    }else if(otherbullets.length < allOtherBullets.length) {
+      for (var i = 0; i < allOtherBullets.length-otherbullets.length; i++) {
+        var otherBullet = new Bullet(0,0,0,50,0xFF99FF);
+        otherbullets.push(otherBullet);
+      }
+    }
+    for (var i = 0; i < otherbullets.length; i++) {
+      otherbullets[i].updatePos(allOtherBullets[i].x,allOtherBullets[i].y);
+      otherbullets[i].sprite.body.velocity.x = allOtherBullets.velx;
+      otherbullets[i].sprite.body.velocity.y = allOtherBullets.vely;
+    }
+  }
+}
+function onError(evt)
+{
+  writeToScreen('error: ' + evt.data + '\n');
+  websocket.close();
+}
+function doSend(mess)
+{
+  //writeToScreen("sent: " + mess + '\n'); 
+  websocket.send(mess);
+}
+function writeToScreen(mess)
+{
+  var messages = document.getElementsByTagName('ul')[0],
+  message = document.createElement('li'),
+  content = document.createTextNode(mess);
+  message.appendChild(content);
+  messages.appendChild(message);  
+}
+window.addEventListener("load", doConnect, false);
+
+ function doDisconnect() {
+  websocket.close();
+ }
+
+var game = new Phaser.Game(810, 810, Phaser.AUTO, "canvasholder", {
   preload: preload,
   create: create,
   update: update,
@@ -49,6 +173,8 @@ var scoreText;
 var idText;
 var isConnected = false;
 
+var clrWhl = Phaser.Color.HSVColorWheel();
+
 var back_layer;
 var mid_layer;
 var front_layer;
@@ -56,7 +182,8 @@ var front_layer;
 var selfId = 0;
 
 var bullets = [];
-var cursors = [];
+var otherbullets = [];
+var otherPlayers = [];
 
 var upKey;
 var downKey;
@@ -67,6 +194,7 @@ var spaceKey;
 var playerAngle = 0;
 
 var vec = new Phaser.Point();
+var vecOrigin = new Phaser.Point(0, 0);
 
 var playerCollisionGroup;
 var bulletCollisionGroup;
@@ -93,7 +221,7 @@ class Bullet {
     //this.sprite.body.loadPolygon("physicsData", "balloon");
     this.circleGraphics = game.add.graphics(0, 0);
     //this.wallRectGraphics.lineStyle(2, 0x000000);
-    this.circleGraphics.beginFill(0x00ffff, 1);
+    this.circleGraphics.beginFill(0xFFFFFF, 1);
     this.circleGraphics.drawCircle(0,0,15);
     this.circleGraphics.endFill();
     this.sprite.addChild(this.circleGraphics);
@@ -108,7 +236,7 @@ class Bullet {
     this.sprite.body.collides([bulletCollisionGroup, playerCollisionGroup, wallCollisionGroup]);
     //console.log("hay")
     //console.log(Phaser.Color.HSVColorWheel()[this.clr]);
-    this.sprite.tint = Phaser.Color.HSVColorWheel()[this.clr].color;
+    //this.sprite.tint = Phaser.Color.HSVColorWheel()[this.clr].color;
     this.sprite.anchor.set(0.5);
     //this.sprite.animations.add("pop", [0, 1, 2, 3, 4, 5, 6], 5, true);
     //this.sprite.scale.setTo(0.2, 0.2);
@@ -117,13 +245,17 @@ class Bullet {
   updatePos(x, y) {
     this.sprite.x = x;
     this.sprite.y = y;
+    this.sprite.body.x = x;
+    this.sprite.body.y = y;
   }
 
   update() {
 
     vec.set(this.sprite.body.velocity.x, this.sprite.body.velocity.y);
+
+    this.circleGraphics.tint = clrWhl[(parseInt(vec.angle(vecOrigin, true))%360+720)%360].color;
     
-    if (Math.abs(vec.getMagnitudeSq() - 90000) > 5) {
+    if (Math.abs(vec.getMagnitudeSq() - 90000) > 50) {
         vec.setMagnitude(300);
     
         this.sprite.body.velocity.x = vec.x;
@@ -162,38 +294,45 @@ class Wall {
   update() {}
 }
 
-class Cursor {
-  constructor(id, x, y, score) {
-    this.id = id;
+class OtherPlayer {
+  constructor(x, y) {
     this.x = x;
     this.y = y;
 
-    this.score = score;
+    this.score = 0;
 
-    this.shouldExist = true;
-
-    this.sprite = game.add.sprite(x, y, "cursor");
-    this.sprite.scale.setTo(0.77, 0.77);
-    this.sprite.anchor.set(0.5);
+    this.playerSprite = game.add.sprite(x, y);
+    this.playerSprite.anchor.set(0.5, 0.5);
+    game.physics.p2.enable(this.playerSprite, false);
+    this.playerSprite.body.setRectangle(40,60);
+    this.playerGraphics = game.add.graphics(0, 0);
+    this.playerGraphics.beginFill(0xff8800, 1);
+    this.playerGraphics.drawRect(-20,-30,40,60);
+    this.playerGraphics.endFill();
+    this.playerSprite.addChild(this.playerGraphics);
+    this.playerSprite.body.setCollisionGroup(playerCollisionGroup);
+    this.playerSprite.body.collides([bulletCollisionGroup, wallCollisionGroup]);
+    this.playerSprite.body.mass = 1;
+    this.playerSprite.body.setMaterial(material1);
   }
 
   updatePos(x, y) {
     this.x = x;
     this.y = y;
-    this.sprite.x = x;
-    this.sprite.y = y;
+    this.playerSprite.x = x;
+    this.playerSprite.y = y;
+    this.playerSprite.body.x = x;
+    this.playerSprite.body.y = y;
   }
 }
 
-function writeToScreen(message) {
+/*function writeToScreen(message) {
   textText.text = message;
-}
-
-window.addEventListener("load", init, false);
+}*/
 
 function create() {
 
-  game.world.setBounds(0, 0, 800, 800);
+  game.world.setBounds(0, 0, 810, 810);
 
   //  To make the sprite move we need to enable Arcade Physics
   game.physics.startSystem(Phaser.Physics.P2JS);
@@ -203,7 +342,7 @@ function create() {
 
   material1 = game.physics.p2.createMaterial();    
   material2 = game.physics.p2.createMaterial();        
-  game.physics.p2.createContactMaterial(material1, material1, { friction: 0 , restitution: 1.0 });
+  game.physics.p2.createContactMaterial(material1, material1, { friction: 0, restitution: 1 });
   //sprite2.body.setMaterial(material1);
 
   //  Create our collision groups. One for the player, one for the pandas
@@ -211,7 +350,7 @@ function create() {
   bulletCollisionGroup = game.physics.p2.createCollisionGroup();
   wallCollisionGroup = game.physics.p2.createCollisionGroup();
 
-  //  This part is vital if you want the objects with their own collision groups to still collide with the world bounds
+  //  This part is vital if you want the receivedMessageects with their own collision groups to still collide with the world bounds
   //  (which we do) - what this does is adjust the bounds to use its own collision group.
   game.physics.p2.updateBoundsCollisionGroup();
 
@@ -262,24 +401,24 @@ function create() {
   // World bounds
   var worldBoundLeft   = new Wall(-40,0,50,800);
   var worldBoundTop    = new Wall(0,-40,800,50);
-  var worldBoundRight  = new Wall(790,0,50,800);
-  var worldBoundBottom = new Wall(0,790,800,50);
+  var worldBoundRight  = new Wall(800,0,50,800);
+  var worldBoundBottom = new Wall(0,800,800,50);
 
-  for (var i = 0; i < 20; i++) {
+  /*for (var i = 0; i < 20; i++) {
     var wallall = new Wall(randint(1,7)*100,randint(1,7)*100,100,10);
   }
   for (var i = 0; i < 20; i++) {
     var wallall = new Wall(randint(1,7)*100,randint(1,7)*100,10,100);
-  }
+  }*/
 
   //  And enable the Sprite to have a physics body:
   //game.camera.follow(player);
 
-  upKey = game.input.keyboard.addKey(Phaser.Keyboard.UP);
+  /*upKey = game.input.keyboard.addKey(Phaser.Keyboard.UP);
   downKey = game.input.keyboard.addKey(Phaser.Keyboard.DOWN);
   leftKey = game.input.keyboard.addKey(Phaser.Keyboard.LEFT);
   rightKey = game.input.keyboard.addKey(Phaser.Keyboard.RIGHT);
-  spaceKey = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+  spaceKey = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);*/
 }
 
 function clickListener() {
@@ -292,29 +431,29 @@ var spaceDown = false;
 
 function update() {
   player.body.setZeroVelocity();
-  if (upKey.isDown) {
+  if (game.input.keyboard.isDown(Phaser.Keyboard.UP)) {
     //player.body.moveUp(200*Math.sin(radians(player.angle+90)));
     //player.body.moveLeft(200*Math.cos(radians(player.angle+90)));
     player.body.thrust(14000);
   }
-  if (downKey.isDown) {
+  if (game.input.keyboard.isDown(Phaser.Keyboard.DOWN)) {
     //player.body.moveUp(-200*Math.sin(radians(player.angle+90)));
     //player.body.moveLeft(-200*Math.cos(radians(player.angle+90)));
     player.body.reverse(14000);
   }
-  if (leftKey.isDown) {
+  if (game.input.keyboard.isDown(Phaser.Keyboard.LEFT)) {
     //playerAngle -= 0.06;
     player.body.rotateLeft(70);
-  } else if (rightKey.isDown) {
+  } else if (game.input.keyboard.isDown(Phaser.Keyboard.RIGHT)) {
     //playerAngle += 0.06;
     player.body.rotateRight(70);
   } else {
     player.body.setZeroRotation();
   }
-  if (spaceKey.isDown) {
+  if (game.input.keyboard.isDown(Phaser.Keyboard.SPACEBAR)) {
     if (!spaceDown) {
-      spaceDown = true;
-      if (bullets.length < 5) {
+      //spaceDown = true;
+      if (bullets.length < 50000) {
         bullets.push(
           new Bullet(
             0,
@@ -343,13 +482,13 @@ function update() {
     pointerDown = false;
   }
 
-  scoreText.text = "";
+  /*scoreText.text = "";
   for (var i = 0; i < cursors.length; i++) {
     scoreText.text += "Player" + cursors[i].id + ": " + cursors[i].score + "\n";
     if (cursors[i].id == selfId) {
       idText.text = "Player" + cursors[i].id;
     }
-  }
+  }*/
 
   /*player.body.angle =
     180 +
@@ -359,21 +498,38 @@ function update() {
         game.input.activePointer.worldX - player.body.x
       )
     );*/
-  
 
-  if (bullets.length > 0) {
-    var bulletStr = "b:";
-    bullets[0].update();
-    bulletStr.concat(bullets[0].sprite.body.x + "," + bullets[0].sprite.body.y);
-    for (var i = 1; i < bullets.length; i++) {
-      bullets[i].update();
-      bulletStr.concat(
-        ";" + bullets[i].sprite.body.x + "," + bullets[i].sprite.body.y
-      );
-    }
+  for (var i = 1; i < otherPlayers.length; i++) {
+      
+  }
+
+  for (var i = 0; i < otherbullets.length; i++) {
+    otherbullets[i].update();
+  }
+
+  var bulletInfo = [];
+
+  for (var i = 0; i < bullets.length; i++) {
+    bullets[i].update();
+    bulletInfo.push({
+                     "x":Math.round(bullets[i].sprite.body.x),
+                     "y":Math.round(bullets[i].sprite.body.y),
+                     "velx":Math.round(bullets[i].sprite.body.velocity.x),
+                     "vely":Math.round(bullets[i].sprite.body.velocity.y)
+                    });
+  }
+  
+  if(connectedToWS) {
+  doSend(JSON.stringify({
+                        "posX":Math.round(player.body.x),
+                        "posY":Math.round(player.body.y),
+                        "rot":Math.round(player.body.angle),
+                        "bullets":bulletInfo,
+                        "colour":[7,7,7]
+                      }));
   }
 }
 
 function render() {
-  game.debug.inputInfo(32, 32);
+  //game.debug.inputInfo(32, 32);
 }
