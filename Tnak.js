@@ -211,6 +211,8 @@ class Bullet {
 
     this.shouldExist = true;
 
+    this.lifeTime = 500;
+
     this.sprite = game.add.sprite(x, y);
     //  And enable the Sprite to have a physics body:
     game.physics.p2.enable(this.sprite, false);
@@ -233,7 +235,8 @@ class Bullet {
     //  Pandas will collide against themselves and the player
     //  If you don't set this they'll not collide with anything.
     //  The first parameter is either an array or a single collision group.
-    this.sprite.body.collides([bulletCollisionGroup, playerCollisionGroup, wallCollisionGroup]);
+    this.sprite.body.collides([bulletCollisionGroup, wallCollisionGroup]);
+    this.sprite.body.collides(playerCollisionGroup, hitPlayer, this);
     //console.log("hay")
     //console.log(Phaser.Color.HSVColorWheel()[this.clr]);
     //this.sprite.tint = Phaser.Color.HSVColorWheel()[this.clr].color;
@@ -250,6 +253,8 @@ class Bullet {
   }
 
   update() {
+
+    this.lifeTime -= 1;
 
     vec.set(this.sprite.body.velocity.x, this.sprite.body.velocity.y);
 
@@ -311,7 +316,7 @@ class OtherPlayer {
     this.playerGraphics.endFill();
     this.playerSprite.addChild(this.playerGraphics);
     this.playerSprite.body.setCollisionGroup(playerCollisionGroup);
-    this.playerSprite.body.collides([bulletCollisionGroup, wallCollisionGroup]);
+    this.playerSprite.body.collides([playerCollisionGroup,bulletCollisionGroup, wallCollisionGroup]);
     this.playerSprite.body.mass = 1;
     this.playerSprite.body.setMaterial(material1);
   }
@@ -344,6 +349,8 @@ function create() {
   material2 = game.physics.p2.createMaterial();        
   game.physics.p2.createContactMaterial(material1, material1, { friction: 0, restitution: 1 });
   //sprite2.body.setMaterial(material1);
+
+  game.physics.p2.setImpactEvents(true);
 
   //  Create our collision groups. One for the player, one for the pandas
   playerCollisionGroup = game.physics.p2.createCollisionGroup();
@@ -397,6 +404,7 @@ function create() {
   //player.body.damping = 0.9;
   player.body.mass = 1;
   player.body.setMaterial(material1);
+  //player.body.collides(bulletCollisionGroup, hitPlayer, this);
 
   // World bounds
   var worldBoundLeft   = new Wall(-40,0,50,800);
@@ -419,6 +427,8 @@ function create() {
   leftKey = game.input.keyboard.addKey(Phaser.Keyboard.LEFT);
   rightKey = game.input.keyboard.addKey(Phaser.Keyboard.RIGHT);
   spaceKey = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);*/
+
+  //ship.body.collides(playerCollisionGroup, hitPlayer, this);
 }
 
 function clickListener() {
@@ -443,22 +453,22 @@ function update() {
   }
   if (game.input.keyboard.isDown(Phaser.Keyboard.LEFT)) {
     //playerAngle -= 0.06;
-    player.body.rotateLeft(70);
+    player.body.rotateLeft(90);
   } else if (game.input.keyboard.isDown(Phaser.Keyboard.RIGHT)) {
     //playerAngle += 0.06;
-    player.body.rotateRight(70);
+    player.body.rotateRight(90);
   } else {
     player.body.setZeroRotation();
   }
   if (game.input.keyboard.isDown(Phaser.Keyboard.SPACEBAR)) {
     if (!spaceDown) {
-      //spaceDown = true;
-      if (bullets.length < 50000) {
+      spaceDown = true;
+      if (bullets.length < 7) {
         bullets.push(
           new Bullet(
             0,
-            player.x - 20 * Math.cos(radians(player.angle+90)),
-            player.y - 20 * Math.sin(radians(player.angle+90)),
+            player.x - 40 * Math.cos(radians(player.angle+90)),
+            player.y - 40 * Math.sin(radians(player.angle+90)),
             180 + player.angle+90,
             game.rnd.integer() % 360
           )
@@ -504,12 +514,14 @@ function update() {
   }
 
   for (var i = 0; i < otherbullets.length; i++) {
+    //otherbullets[i].sprite.body.velocity.x = 1;
+    //otherbullets[i].sprite.body.velocity.y = 1;
     otherbullets[i].update();
   }
 
   var bulletInfo = [];
 
-  for (var i = 0; i < bullets.length; i++) {
+  for (var i = bullets.length-1; i >= 0; i--) {
     bullets[i].update();
     bulletInfo.push({
                      "x":Math.round(bullets[i].sprite.body.x),
@@ -517,6 +529,10 @@ function update() {
                      "velx":Math.round(bullets[i].sprite.body.velocity.x),
                      "vely":Math.round(bullets[i].sprite.body.velocity.y)
                     });
+    if(bullets[i].lifeTime<0) {
+      bullets[i].sprite.destroy();
+      bullets.splice(i,1);
+    }
   }
   
   if(connectedToWS) {
@@ -532,4 +548,15 @@ function update() {
 
 function render() {
   //game.debug.inputInfo(32, 32);
+}
+
+function hitPlayer(body1, body2) {
+  
+      //  body1 is the space ship (as it's the body that owns the callback)
+      //  body2 is the body it impacted with, in this case our panda
+      //  As body2 is a Phaser.Physics.P2.Body object, you access its own (the sprite) via the sprite property:
+      body2.x = 60;
+      body2.y = 60;
+      //writeToScreen("HIT!!!");
+  
 }
